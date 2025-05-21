@@ -1,0 +1,5 @@
+{
+    "clear": true,
+    "ignore": ["./vscode", "./Adora Interview"],
+    "respawn": true
+}
