@@ -1,14 +1,13 @@
-import { GatewayDispatchPayload, GatewayDispatchEvents } from "discord.js";
+import { GatewayDispatchPayload, GatewayDispatchEvents, APIChatInputApplicationCommandInteraction, Interaction, InteractionType, ChatInputCommandInteraction } from "discord.js";
+import { ALL_COMMAND_CONFIGS } from "../commands";
 
-export const intentHandler = (event: GatewayDispatchPayload) => {
+export const intentHandler = (event: Interaction) => {
+    // console.log(`Got event from Discord: ${JSON.stringify(event, null, 2)}`);
 
-    switch(event.t) {
-        case GatewayDispatchEvents.MessageReactionAdd:
-            break;
-        case GatewayDispatchEvents.InteractionCreate:
-            break;
-        default:
-            console.error(`Unknown intent event type: ${event.t}`, event);
+    if (event.isChatInputCommand()) {
+        const command = ALL_COMMAND_CONFIGS.find(c => c.commandConfig.name === event.commandName);
+        return command?.callback(event);
+    } else {
+        console.log(event.id)
     }
 };
-

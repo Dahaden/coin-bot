@@ -1,2 +1,2 @@
-export { db } from './db';
-export { usersTable, stepInstance } from './schema';
+export { db, TransactionType } from './db';
+export { usersTable, bankTable, currencyTable } from './schema';

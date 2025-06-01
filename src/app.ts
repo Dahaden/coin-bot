@@ -1,14 +1,14 @@
 import 'dotenv/config';
 import express from 'express';
-import { WebSocketManager, WebSocketShardEvents, CompressionMethod } from '@discordjs/ws';
-import { REST } from '@discordjs/rest';
 
 import { applyRoutes } from './routes';
-import { GatewayIntentBits } from 'discord.js';
+import { Client, Events, GatewayIntentBits, IntentsBitField, Partials } from 'discord.js';
+import { installGlobalCommands, intentHandler } from './discord';
+import { reactionHandler } from './discord/reactionHandler';
 
 const app = express()
 app.use(express.json());
-const port = 3000
+const port = process.env.PORT || 3000;
 
 applyRoutes(app);
 
@@ -16,21 +16,29 @@ app.listen(port, () => {
   console.log(`Example app listening on port ${port}`)
 });
 const main = async () => {
-  const rest = new REST().setToken(process.env.DISCORD_TOKEN!);
-  // This example will spawn Discord's recommended shard count, all under the current process.
-  const manager = new WebSocketManager({
-    token: process.env.DISCORD_TOKEN!,
-    intents: GatewayIntentBits.GuildMessageReactions,
-    rest,
-    // uncomment if you have zlib-sync installed and want to use compression
-    compression: CompressionMethod.ZlibSync,
+  const intents = new IntentsBitField();
+  intents.add(GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages, GatewayIntentBits.GuildMessageReactions);
+  const client = new Client({
+    intents,
+    partials: [Partials.Message, Partials.Channel, Partials.Reaction],
   });
-  
-  manager.on(WebSocketShardEvents.Dispatch, (event) => {
-    // Process gateway events here.
+
+  client.once(Events.ClientReady, readyClient => {
+    console.log(`Ready! Logged in as ${readyClient.user.tag}`);
   });
-  
-  await manager.connect();
+
+  client.on(Events.InteractionCreate, async (event) => {
+    await intentHandler(event);
+  });
+
+  client.on(Events.MessageReactionAdd, async (react, user) => {
+    await reactionHandler(react, user);
+  });
+
+  await client.login(process.env.DISCORD_TOKEN);
+
+  installGlobalCommands();
+
 }
 
 main().catch(error => {

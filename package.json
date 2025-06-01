@@ -6,7 +6,8 @@
   "scripts": {
     "dev": "ts-node-dev --respawn src/app.ts",
     "drizzle:apply": "drizzle-kit push",
-    "test": "vitest"
+    "test": "vitest",
+    "build:prod": "tsc"
   },
   "devDependencies": {
     "@types/express": "^5.0.1",
@@ -20,16 +21,11 @@
     "vitest": "^3.1.2"
   },
   "dependencies": {
-    "@discordjs/ws": "^2.0.2",
-    "bufferutil": "^4.0.9",
-    "discord-interactions": "^4.3.0",
     "discord.js": "^14.19.3",
     "dotenv": "^16.5.0",
-    "drizzle-orm": "^0.43.1",
+    "drizzle-orm": "^0.44.1",
     "express": "^5.1.0",
-    "http-status-codes": "^2.3.0",
     "pg": "^8.15.6",
-    "zlib-sync": "^0.1.10",
     "zod": "^3.24.3",
     "zod-express-middleware": "^1.4.0"
   }
