@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { db, TransactionType, bankTable, currencyTable, usersTable } from "../db";
 import { and, desc, eq, or } from "drizzle-orm";
+import { DontGiveYourselfMoneyError, InsufficientFundsError, NoEmojiExistsError } from "../errors";
 
 const ZSafeNumber = z.number().min(1).max(Number.MAX_SAFE_INTEGER / 2);
 
@@ -37,7 +38,23 @@ const ZGetBalancesRequest = z.object({
 });
 export type GetBalancesRequest = z.infer<typeof ZGetBalancesRequest>;
 
+const ZGetCurrencies = z.object({
+    guild: z.string(),
+});
+export type GetCurrencies = z.infer<typeof ZGetCurrencies>;
+
+
 export class Bank {
+
+    async getAllCurrenciesForGuild(request: GetCurrencies) {
+        ZGetCurrencies.parse(request);
+        return db.select({
+            emoji: currencyTable.emoji
+        }).from(currencyTable)
+            .where(
+                eq(currencyTable.guild, request.guild)
+            );
+    }
 
     async getBalances(request: GetBalancesRequest) {
         ZGetBalancesRequest.parse(request);
@@ -70,11 +87,6 @@ export class Bank {
         return results;
     }
 
-    async getEmojisForGuild(guild: string) {
-        return db.select({ emoji: currencyTable.emoji }).from(currencyTable)
-            .where(eq(currencyTable.guild, guild));
-    }
-
     async createCurrency(createCurrency: CreateCurrencyRequest) {
         ZCreateCurrency.parse(createCurrency);
         await db.transaction(async tx => {
@@ -96,6 +108,9 @@ export class Bank {
 
     async transferFunds(transferRequest: TransferRequest) {
         ZTransferRequest.parse(transferRequest);
+        if (transferRequest.sender.discord_id === transferRequest.recipient.discord_id) {
+            throw new DontGiveYourselfMoneyError({ emoji: transferRequest.emoji, user: transferRequest.sender.name });
+        }
         await db.transaction(async tx => {
             const result = await tx.select().from(bankTable)
                 .innerJoin(currencyTable, eq(bankTable.currency_id, currencyTable.id))
@@ -113,7 +128,7 @@ export class Bank {
 
             if (result.length === 0) {
                 // Assume there is no bank for this emoji / guild combo
-                return;
+                throw new NoEmojiExistsError({ emoji: transferRequest.emoji, user: transferRequest.sender.name });
             }
 
             const sender = result.find(r => r.users.discord_id === transferRequest.sender.discord_id);
@@ -121,7 +136,7 @@ export class Bank {
 
             if (!sender || sender.bank_table.coins < transferRequest.amount) {
                 // Sender does not exist, or doesnt have enough money, cannot send money
-                return;
+                throw new InsufficientFundsError({ emoji: transferRequest.emoji, user: transferRequest.sender.name });
             }
             if (!recipient) {
                 // Need to create the recipient so they can get money

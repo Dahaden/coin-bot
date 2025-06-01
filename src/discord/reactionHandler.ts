@@ -4,7 +4,7 @@ import { toUser } from "./util";
 
 export const reactionHandler = async (reaction: MessageReaction | PartialMessageReaction, user: User | PartialUser) => {
     const bank = getBank();
-    const emojis = await bank.getEmojisForGuild(reaction.message.guildId as string); // TODO assert this
+    const emojis = await bank.getAllCurrenciesForGuild({ guild: reaction.message.guildId as string }); // TODO assert this
     const registeredEmojis = new Set(emojis.map(({ emoji }) => emoji));
 
     const usedEmoji = reaction.emoji.toString();

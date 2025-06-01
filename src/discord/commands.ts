@@ -13,11 +13,26 @@ import {
 import { getBank } from '../services';
 import { CreateCurrencyRequest, GetBalancesRequest, TransferRequest, User } from '../services/bank';
 import { toUser } from './util';
+import { AbstractBankError } from '../errors';
 
 type IntentCommandWithCallback<Event extends GatewayDispatchEvents, D = unknown, Payload extends _DataPayload<Event> = _DataPayload<Event, D>> = {
     commandConfig: SlashCommandBuilder | SlashCommandOptionsOnlyBuilder,
     callback: (event: ChatInputCommandInteraction) => Promise<void>,
 };
+
+const commandErrorWrapper = <T extends ChatInputCommandInteraction>(callback: (event: T) => Promise<void>) => async (event: T) => {
+    try {
+        await callback(event);
+    } catch (error) {
+        if (!event.replied) {
+            if (error instanceof AbstractBankError) {
+                await event.reply(error.message);
+            } else if (error instanceof Error) {
+                await event.reply(`Not sure what went wrong...: ${error.message}`)
+            }
+        }
+    }
+}
 
 const CreateCurrencyCommand: IntentCommandWithCallback<GatewayDispatchEvents.IntegrationCreate, APIChatInputApplicationCommandInteraction> = {
     commandConfig: new SlashCommandBuilder()
@@ -40,7 +55,7 @@ const CreateCurrencyCommand: IntentCommandWithCallback<GatewayDispatchEvents.Int
                 .setDescription('Number of coins this currency has')
                 .setRequired(true)
         ),
-    callback: async (event) => {
+    callback: commandErrorWrapper(async (event) => {
         const bank = getBank();
         const currencyCommissioner = event.options.getUser('currency_commissioner', true);
         if (currencyCommissioner.bot) {
@@ -59,7 +74,7 @@ const CreateCurrencyCommand: IntentCommandWithCallback<GatewayDispatchEvents.Int
         await event.reply("Created");
 
         // Create custom guild commands to make it easier to send currencies
-    }
+    })
 };
 
 const SendCurrencyCommand: IntentCommandWithCallback<GatewayDispatchEvents.IntegrationCreate, APIChatInputApplicationCommandInteraction> = {
@@ -79,7 +94,7 @@ const SendCurrencyCommand: IntentCommandWithCallback<GatewayDispatchEvents.Integ
                 .setDescription('Number of coins you want to send')
                 .setRequired(true)
         ),
-    callback: async (event) => {
+    callback: commandErrorWrapper(async (event) => {
         const bank = getBank();
         const recipient = event.options.getUser('user', true);
         if (recipient.bot) {
@@ -99,7 +114,7 @@ const SendCurrencyCommand: IntentCommandWithCallback<GatewayDispatchEvents.Integ
         };
         await bank.transferFunds(requestOptions);
         await event.reply(`Sent ${requestOptions.amount} to ${recipient.displayName}`);
-    }
+    })
 };
 
 const GetBalancesCommand: IntentCommandWithCallback<GatewayDispatchEvents.IntegrationCreate, APIChatInputApplicationCommandInteraction> = {
@@ -115,11 +130,11 @@ const GetBalancesCommand: IntentCommandWithCallback<GatewayDispatchEvents.Integr
                 .setName('user')
                 .setDescription('The user you see how many coins they have')
         ),
-    callback: async (event) => {
+    callback: commandErrorWrapper(async (event) => {
         const bank = getBank();
         const user = event.options.getUser('user');
         if (user?.bot) {
-            event.reply("Bot cannot have money, dummy");
+            await event.reply("Bot cannot have money, dummy");
             return;
         }
         const emoji = event.options.getString('associated_emoji', true)
@@ -130,13 +145,33 @@ const GetBalancesCommand: IntentCommandWithCallback<GatewayDispatchEvents.Integr
         };
         const balances = await bank.getBalances(requestOptions);
         await event.reply(`Balance for ${emoji}.\n${balances.map(({ name, coins }) => `${name}: ${coins}`).join('\n')}`);
-    }
+    })
+};
+
+const GetAllCurrencies: IntentCommandWithCallback<GatewayDispatchEvents.IntegrationCreate, APIChatInputApplicationCommandInteraction> = {
+    commandConfig: new SlashCommandBuilder()
+        .setName('currencies')
+        .setDescription('See all currencies registered'),
+    callback: commandErrorWrapper(async (event) => {
+        const bank = getBank();
+        const user = event.options.getUser('user');
+        const emojis = (await bank.getAllCurrenciesForGuild({
+            guild: event.guildId as string, // TODO assert this
+        })).map(({ emoji }) => emoji).join('');
+
+        if (emojis.length > 0) {
+            await event.reply(`Currencies: ${emojis}`);
+        } else {
+            await event.reply('Found no currencies. Create one with /create')
+        }
+    })
 };
 
 export const ALL_COMMAND_CONFIGS = [
     CreateCurrencyCommand,
     SendCurrencyCommand,
-    GetBalancesCommand
+    GetBalancesCommand,
+    GetAllCurrencies
 ];
 
 export const installGlobalCommands = async () => {

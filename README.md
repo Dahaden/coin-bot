@@ -41,6 +41,7 @@ Then Dave needs to restart the app on his home server.
 ### Bugs
 
 - Better error handling
+- Preventing duplicate currencies
 
 ### Enhancements
 
@@ -49,6 +50,7 @@ Then Dave needs to restart the app on his home server.
 - Create better slash commands specific to the currency created for the guild
 - Configure specific channel for all bot messages
     - Link to original message from the bot transaction message
+- Caching the currency check
 
 ### New features
 
