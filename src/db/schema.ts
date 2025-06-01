@@ -23,23 +23,3 @@ export const bankTable = pgTable("bank_table", {
 }, t => [
   primaryKey({ columns: [t.user_id, t.currency_id] })
 ]);
-
-// Audit log
-
-// User Alias'
-
-// Multi App (eg discord + slack)
-/// One currency can be linked to many discords / slacks
-/// Link users between apps (probably via email hash?)
-
-// Exchange rates
-
-// Commisioners
-/// Tax
-/// Rebates
-/// Set exchange rates (to be confirmed with commisioners of other currency)
-/// Voting to replace commisioner
-/// Move the currency pool away from an individual, commisioner needs to divy out from the pool but has their own stash too
-//// Commisioner could secretly bribe or steal from pool?
-
-// Contracts?
