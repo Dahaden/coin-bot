@@ -8,9 +8,10 @@ import {
     SlashCommandBuilder,
     SlashCommandOptionsOnlyBuilder,
     ChatInputCommandInteraction,
-    User as DiscordUser
+    User as DiscordUser,
+    MessageFlags
 } from 'discord.js';
-import { getBank } from '../services';
+import { getBank, getGuildService } from '../services';
 import { CreateCurrencyRequest, GetBalancesRequest, TransferRequest, User } from '../services/bank';
 import { toUser } from './util';
 import { AbstractBankError } from '../errors';
@@ -167,11 +168,42 @@ const GetAllCurrencies: IntentCommandWithCallback<GatewayDispatchEvents.Integrat
     })
 };
 
+const SetSpamChannel: IntentCommandWithCallback<GatewayDispatchEvents.IntegrationCreate, APIChatInputApplicationCommandInteraction> = {
+    commandConfig: new SlashCommandBuilder()
+        .setName('spam_channel')
+        .setDescription('Set specific channel for spam bot messages to go to')
+        .addChannelOption(option =>
+            option.setName('channel')
+                .setDescription('Set the channel for spam messages to go to')
+                .setRequired(true)
+        ),
+    callback: commandErrorWrapper(async (event) => {
+        const guildService = getGuildService();
+        const channel = event.options.getChannel('channel');
+        if (!channel) {
+            await event.reply({
+                content: `Missing spam channel`,
+                flags: MessageFlags.Ephemeral
+            });
+            throw new Error('Channel is required');
+        }
+        await guildService.setSpamChannelForGuild(
+            event.guildId as string,
+            channel.id
+        );
+        await event.reply({
+            content: `Saved spam channel`,
+            flags: MessageFlags.Ephemeral
+        });
+    })
+};
+
 export const ALL_COMMAND_CONFIGS = [
     CreateCurrencyCommand,
-    SendCurrencyCommand,
+    GetAllCurrencies,
     GetBalancesCommand,
-    GetAllCurrencies
+    SendCurrencyCommand,
+    SetSpamChannel
 ];
 
 export const installGlobalCommands = async () => {

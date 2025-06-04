@@ -1,4 +1,4 @@
-import { integer, pgTable, varchar, uniqueIndex, index, foreignKey, primaryKey } from "drizzle-orm/pg-core";
+import { integer, pgTable, varchar, uniqueIndex, index, foreignKey, primaryKey, pgEnum, unique } from "drizzle-orm/pg-core";
 
 export const usersTable = pgTable("users", {
   id: integer().primaryKey().generatedAlwaysAsIdentity(),
@@ -22,4 +22,14 @@ export const bankTable = pgTable("bank_table", {
   coins: integer().notNull(),
 }, t => [
   primaryKey({ columns: [t.user_id, t.currency_id] })
+]);
+
+export const guildChannelType = pgEnum("guild_channel_type", ["spam_channel"]);
+
+export const guildChannel = pgTable("guild_channel", {
+  guild: varchar({ length: 255 }).notNull(),
+  channel: varchar({ length: 255 }).notNull(),
+  type: guildChannelType().notNull()
+}, (t) => [
+  primaryKey({ columns: [t.guild, t.channel] })
 ]);
