@@ -34,11 +34,17 @@ USER node
 
 COPY --from=dist /home/node/app/dist /home/node/app/dist
 
-# COPY --chown=node:node dist/ dist/
 COPY --from=dependencies /home/node/app/yarn.lock /home/node/app/package.json ./
 COPY --from=dependencies /home/node/app/node_modules ./node_modules
+
+COPY ./bin ./bin
+
+## For Drizzle, this should be moved to SQL migration files
+RUN mkdir -p /home/node/app/src/db
+COPY drizzle.config.ts ./
+COPY src/db/schema.ts ./src/db/
 
 ENV NODE_ENV=production
 ENV PORT=3000
 
-CMD [ "node", "./dist/app.js" ]
+CMD [ "./bin/server-start.sh" ]

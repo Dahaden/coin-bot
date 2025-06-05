@@ -26,7 +26,6 @@ export const reactionHandler = async (reaction: MessageReaction | PartialMessage
                     message: messageWithAuthor,
                     replyMessage: `${user} sent 1 ${usedEmoji} to ${messageWithAuthor.author}`
                 });
-                await messageWithAuthor.reply(`${user.username} sent 1 ${usedEmoji} to ${messageWithAuthor.author.username}`);
             } catch (error) {
                 if (error instanceof AbstractBankError) {
                     await replyToMessage({
@@ -34,7 +33,6 @@ export const reactionHandler = async (reaction: MessageReaction | PartialMessage
                         message: messageWithAuthor,
                         replyMessage: error.message
                     });
-                    await messageWithAuthor.reply(error.message);
                 }
             }
         }

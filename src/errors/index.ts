@@ -1,33 +1,44 @@
 
 export class AbstractBankError extends Error {
+    private user: ToStringAble;
 
+    constructor(context: ErrorMessageContext, errorMessages: Array<string | ErrorMessageFunction>) {
+        super(pullRandomMessage(errorMessages, context));
+        this.user = context.user;
+        this.name = this.constructor.name;
+    }
+
+    toString() {
+        return `${this.name} caused by ${this.user}: ${this.message}`;
+    }
 }
 
 export class InsufficientFundsError extends AbstractBankError {
     constructor(context: ErrorMessageContext) {
-        super(pullRandomMessage([
+        super(context, [
             ...GENERAL_ERROR_STATEMENTS,
             ...INSUFFICIENT_FUNDS_ERROR_STATEMENTS
-        ], context)
-        );
+        ]);
     }
 }
 
 export class DontGiveYourselfMoneyError extends AbstractBankError {
     constructor(context: ErrorMessageContext) {
-        super(pullRandomMessage(GENERAL_ERROR_STATEMENTS, context));
+        super(context, GENERAL_ERROR_STATEMENTS);
     }
 }
 
 export class NoEmojiExistsError extends AbstractBankError {
     constructor(context: ErrorMessageContext) {
-        super(pullRandomMessage(GENERAL_ERROR_STATEMENTS, context));
+        super(context, GENERAL_ERROR_STATEMENTS);
     }
 }
 
+type ToStringAble = { toString: () => string } | string;
+
 type ErrorMessageContext = {
     emoji: string,
-    user: string
+    user: ToStringAble
 };
 type ErrorMessageFunction = (context: ErrorMessageContext) => string;
 
@@ -40,7 +51,7 @@ const GENERAL_ERROR_STATEMENTS: Array<string | ErrorMessageFunction> = [
 ];
 
 const INSUFFICIENT_FUNDS_ERROR_STATEMENTS: Array<string | ErrorMessageFunction> = [
-    ({ user }) => `Hey @everyone ${user} is poor!`,
+    ({ user }) => `Hey everyone ${user} is poor!`,
     ({ emoji }) => `mOAR ${emoji} iS rEQUiRed`.split('')
         .map(c => Math.random() > 0.5 ? c.toUpperCase() : c.toLowerCase())
         .join()

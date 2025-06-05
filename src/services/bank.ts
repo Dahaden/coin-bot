@@ -109,7 +109,7 @@ export class Bank {
     async transferFunds(transferRequest: TransferRequest) {
         ZTransferRequest.parse(transferRequest);
         if (transferRequest.sender.discord_id === transferRequest.recipient.discord_id) {
-            throw new DontGiveYourselfMoneyError({ emoji: transferRequest.emoji, user: transferRequest.sender.name });
+            throw new DontGiveYourselfMoneyError({ emoji: transferRequest.emoji, user: transferRequest.sender });
         }
         await db.transaction(async tx => {
             const result = await tx.select().from(bankTable)
@@ -128,7 +128,7 @@ export class Bank {
 
             if (result.length === 0) {
                 // Assume there is no bank for this emoji / guild combo
-                throw new NoEmojiExistsError({ emoji: transferRequest.emoji, user: transferRequest.sender.name });
+                throw new NoEmojiExistsError({ emoji: transferRequest.emoji, user: transferRequest.sender });
             }
 
             const sender = result.find(r => r.users.discord_id === transferRequest.sender.discord_id);
@@ -136,7 +136,7 @@ export class Bank {
 
             if (!sender || sender.bank_table.coins < transferRequest.amount) {
                 // Sender does not exist, or doesnt have enough money, cannot send money
-                throw new InsufficientFundsError({ emoji: transferRequest.emoji, user: transferRequest.sender.name });
+                throw new InsufficientFundsError({ emoji: transferRequest.emoji, user: transferRequest.sender });
             }
             if (!recipient) {
                 // Need to create the recipient so they can get money
