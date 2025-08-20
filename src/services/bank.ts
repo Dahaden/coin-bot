@@ -8,8 +8,8 @@ const ZSafeNumber = z.number().min(1).max(Number.MAX_SAFE_INTEGER / 2);
 const ZUser = z.object({
     discord_id: z.string(),
     name: z.string(),
+    discord_user: z.unknown().optional(),
 });
-
 export type User = z.infer<typeof ZUser>;
 
 const ZCreateCurrency = z.object({
@@ -109,7 +109,7 @@ export class Bank {
     async transferFunds(transferRequest: TransferRequest) {
         ZTransferRequest.parse(transferRequest);
         if (transferRequest.sender.discord_id === transferRequest.recipient.discord_id) {
-            throw new DontGiveYourselfMoneyError({ emoji: transferRequest.emoji, user: transferRequest.sender });
+            throw new DontGiveYourselfMoneyError({ emoji: transferRequest.emoji, user: this.discordUserOrName(transferRequest.sender) });
         }
         await db.transaction(async tx => {
             const result = await tx.select().from(bankTable)
@@ -128,7 +128,7 @@ export class Bank {
 
             if (result.length === 0) {
                 // Assume there is no bank for this emoji / guild combo
-                throw new NoEmojiExistsError({ emoji: transferRequest.emoji, user: transferRequest.sender });
+                throw new NoEmojiExistsError({ emoji: transferRequest.emoji, user: this.discordUserOrName(transferRequest.sender) });
             }
 
             const sender = result.find(r => r.users.discord_id === transferRequest.sender.discord_id);
@@ -136,7 +136,7 @@ export class Bank {
 
             if (!sender || sender.bank_table.coins < transferRequest.amount) {
                 // Sender does not exist, or doesnt have enough money, cannot send money
-                throw new InsufficientFundsError({ emoji: transferRequest.emoji, user: transferRequest.sender });
+                throw new InsufficientFundsError({ emoji: transferRequest.emoji, user: this.discordUserOrName(transferRequest.sender) });
             }
             if (!recipient) {
                 // Need to create the recipient so they can get money
@@ -180,5 +180,9 @@ export class Bank {
                 set: { name }
             })
             .returning({ user_id: usersTable.id });
+    }
+
+    private discordUserOrName({ discord_user, name }: User) {
+        return discord_user ? discord_user : name;
     }
 }

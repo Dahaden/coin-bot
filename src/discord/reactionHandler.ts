@@ -2,6 +2,7 @@ import { Message, MessageFlags, MessagePayload, MessageReaction, OmitPartialGrou
 import { getBank, getGuildService } from "../services";
 import { toUser } from "./util";
 import { AbstractBankError } from "../errors";
+import { ToStringAble } from "../type-utils";
 
 export const reactionHandler = async (reaction: MessageReaction | PartialMessageReaction, user: User | PartialUser) => {
     const bank = getBank();
@@ -31,7 +32,7 @@ export const reactionHandler = async (reaction: MessageReaction | PartialMessage
                     await replyToMessage({
                         reaction,
                         message: messageWithAuthor,
-                        replyMessage: error.message
+                        replyMessage: error
                     });
                 }
             }
@@ -46,7 +47,7 @@ const replyToMessage = async ({
 }: {
     reaction: MessageReaction | PartialMessageReaction,
     message: OmitPartialGroupDMChannel<Message>
-    replyMessage: string,
+    replyMessage: ToStringAble,
 }) => {
     const guildService = getGuildService();
     const spamChannel = await guildService.getSpamChannelForGuild(reaction.message.guildId as string); // TODO assert this
@@ -62,6 +63,6 @@ const replyToMessage = async ({
             console.log("Chanel is not sendable? or not found", channel);
         }
     } else {
-        await message.reply(replyMessage);
+        await message.reply(replyMessage.toString());
     }
 }

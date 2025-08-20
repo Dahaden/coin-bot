@@ -1,0 +1,1 @@
+export type ToStringAble = { toString: () => string } | string;

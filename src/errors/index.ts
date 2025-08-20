@@ -1,3 +1,4 @@
+import { ToStringAble } from "../type-utils";
 
 export class AbstractBankError extends Error {
     private user: ToStringAble;
@@ -34,8 +35,6 @@ export class NoEmojiExistsError extends AbstractBankError {
     }
 }
 
-type ToStringAble = { toString: () => string } | string;
-
 type ErrorMessageContext = {
     emoji: string,
     user: ToStringAble
@@ -52,10 +51,23 @@ const GENERAL_ERROR_STATEMENTS: Array<string | ErrorMessageFunction> = [
 
 const INSUFFICIENT_FUNDS_ERROR_STATEMENTS: Array<string | ErrorMessageFunction> = [
     ({ user }) => `Hey everyone ${user} is poor!`,
-    ({ emoji }) => `mOAR ${emoji} iS rEQUiRed`.split('')
+    ({ emoji }) => randomCasingTemplate`mOAR ${emoji} iS rEQUiRed`
+];
+
+const randomCasingTemplate = (strs: TemplateStringsArray, ...fillers: unknown[]) => {
+    let result = randomCasing(strs[0]);
+    for (let i = 0; i < fillers.length; i++) {
+        result += fillers[i];
+        result += randomCasing(strs[i + 1]);
+    }
+    return result;
+}
+
+const randomCasing = (str: string) => {
+    return str.split('')
         .map(c => Math.random() > 0.5 ? c.toUpperCase() : c.toLowerCase())
         .join()
-];
+}
 
 const pullRandomMessage = (errorMessages: Array<string | ErrorMessageFunction>, context: ErrorMessageContext) => {
     const position = Math.floor(Math.random() * errorMessages.length);
