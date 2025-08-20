@@ -66,7 +66,7 @@ const randomCasingTemplate = (strs: TemplateStringsArray, ...fillers: unknown[])
 const randomCasing = (str: string) => {
     return str.split('')
         .map(c => Math.random() > 0.5 ? c.toUpperCase() : c.toLowerCase())
-        .join()
+        .join('')
 }
 
 const pullRandomMessage = (errorMessages: Array<string | ErrorMessageFunction>, context: ErrorMessageContext) => {
