@@ -5,6 +5,7 @@ import { applyRoutes } from './routes';
 import { Client, Events, GatewayIntentBits, IntentsBitField, Partials } from 'discord.js';
 import { installGlobalCommands, intentHandler } from './discord';
 import { reactionHandler } from './discord/reactionHandler';
+import { addRole, updateRole } from './discord/roleHandler';
 
 const app = express()
 app.use(express.json());
@@ -17,10 +18,10 @@ app.listen(port, () => {
 });
 const main = async () => {
   const intents = new IntentsBitField();
-  intents.add(GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages, GatewayIntentBits.GuildMessageReactions);
+  intents.add(GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages, GatewayIntentBits.GuildMessageReactions, GatewayIntentBits.GuildMembers);
   const client = new Client({
     intents,
-    partials: [Partials.Message, Partials.Channel, Partials.Reaction],
+    partials: [Partials.Message, Partials.Channel, Partials.Reaction, Partials.GuildMember],
   });
 
   client.once(Events.ClientReady, readyClient => {
@@ -33,6 +34,14 @@ const main = async () => {
 
   client.on(Events.MessageReactionAdd, async (react, user) => {
     await reactionHandler(react, user);
+  });
+
+  client.on(Events.GuildRoleCreate, async (role) => {
+    await addRole(role);
+  });
+
+  client.on(Events.GuildRoleUpdate, async (oldRole, newRole) => {
+    await updateRole(oldRole, newRole);
   });
 
   await client.login(process.env.DISCORD_TOKEN);

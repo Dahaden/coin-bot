@@ -32,7 +32,7 @@ const ZTransferRequest = z.object({
 export type TransferRequest = z.infer<typeof ZTransferRequest>;
 
 const ZGetBalancesRequest = z.object({
-    emoji: z.string(),
+    emoji: z.string().optional(),
     guild: z.string(),
     user: ZUser.optional(),
 });
@@ -58,33 +58,19 @@ export class Bank {
 
     async getBalances(request: GetBalancesRequest) {
         ZGetBalancesRequest.parse(request);
-        if (request.user) {
-            return await db.select({
-                name: usersTable.name,
-                coins: bankTable.coins
-            }).from(bankTable)
-                .innerJoin(usersTable, eq(bankTable.user_id, usersTable.id))
-                .innerJoin(currencyTable, eq(bankTable.currency_id, currencyTable.id))
-                .where(and(
-                    eq(currencyTable.emoji, request.emoji),
-                    eq(currencyTable.guild, request.guild),
-                    eq(usersTable.discord_id, request.user.discord_id)
-                ));
-        }
-
-        const results = await db.select({
+        return await db.select({
             name: usersTable.name,
+            emoji: currencyTable.emoji,
             coins: bankTable.coins
         }).from(bankTable)
             .innerJoin(usersTable, eq(bankTable.user_id, usersTable.id))
             .innerJoin(currencyTable, eq(bankTable.currency_id, currencyTable.id))
             .where(and(
-                eq(currencyTable.emoji, request.emoji),
-                eq(currencyTable.guild, request.guild)
+                eq(currencyTable.guild, request.guild),
+                ...(request.emoji ? [eq(currencyTable.emoji, request.emoji)] : []),
+                ...(request.user ? [eq(usersTable.discord_id, request.user.discord_id)] : [])
             ))
-            .orderBy(desc(bankTable.coins))
-            .limit(100);
-        return results;
+            .orderBy(currencyTable.emoji, bankTable.coins);
     }
 
     async createCurrency(createCurrency: CreateCurrencyRequest) {
@@ -147,20 +133,20 @@ export class Bank {
                     coins: transferRequest.amount
                 });
                 await tx.update(bankTable)
-                    .set({ coins: sender.bank_table.coins - transferRequest.amount })
+                    .set({ coins: sender.bank_table.coins - transferRequest.amount, updated_at: new Date() })
                     .where(and(
                         eq(bankTable.currency_id, sender.bank_table.currency_id),
                         eq(bankTable.user_id, sender.bank_table.user_id)
                     ));
             } else {
                 await tx.update(bankTable)
-                    .set({ coins: sender.bank_table.coins - transferRequest.amount })
+                    .set({ coins: sender.bank_table.coins - transferRequest.amount, updated_at: new Date() })
                     .where(and(
                         eq(bankTable.currency_id, sender.bank_table.currency_id),
                         eq(bankTable.user_id, sender.bank_table.user_id)
                     ));
                 await tx.update(bankTable)
-                    .set({ coins: recipient.bank_table.coins + transferRequest.amount })
+                    .set({ coins: recipient.bank_table.coins + transferRequest.amount, updated_at: new Date() })
                     .where(and(
                         eq(bankTable.currency_id, recipient.bank_table.currency_id),
                         eq(bankTable.user_id, recipient.bank_table.user_id)

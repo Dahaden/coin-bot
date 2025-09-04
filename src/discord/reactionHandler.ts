@@ -1,12 +1,18 @@
 import { Message, MessageFlags, MessagePayload, MessageReaction, OmitPartialGroupDMChannel, PartialMessageReaction, PartialUser, User } from "discord.js";
-import { getBank, getGuildService } from "../services";
-import { toUser } from "./util";
+import { getBank, getGuildService, getRoleService } from "../services";
+import { roleIdToRoleMention, toUser } from "./util";
 import { AbstractBankError } from "../errors";
 import { ToStringAble } from "../type-utils";
 
 export const reactionHandler = async (reaction: MessageReaction | PartialMessageReaction, user: User | PartialUser) => {
+    const guildId = reaction.message.guildId;
+    if (!guildId) {
+        throw new Error('Expected a guild ID');
+    }
+
     const bank = getBank();
-    const emojis = await bank.getAllCurrenciesForGuild({ guild: reaction.message.guildId as string }); // TODO assert this
+    const roleService = getRoleService();
+    const emojis = await bank.getAllCurrenciesForGuild({ guild: guildId });
     const registeredEmojis = new Set(emojis.map(({ emoji }) => emoji));
 
     const usedEmoji = reaction.emoji.toString();
@@ -14,25 +20,32 @@ export const reactionHandler = async (reaction: MessageReaction | PartialMessage
     if (registeredEmojis.has(usedEmoji) && !user.bot) {
         const messageWithAuthor = await reaction.message.fetch();
         if (!messageWithAuthor.author.bot) {
+            const senderRoles = roleService.getUserRoles({ discordId: user.id, guild: guildId })
+                .then(roles => roles.map(roleIdToRoleMention));
+            const recipientRoles = roleService.getUserRoles({ discordId: messageWithAuthor.author.id, guild: guildId });
             try {
                 await bank.transferFunds({
                     recipient: toUser(messageWithAuthor.author),
                     sender: toUser(user),
                     amount: 1,
                     emoji: usedEmoji,
-                    guild: messageWithAuthor.guildId as string
+                    guild: guildId
                 });
+                const senderMention = getUserOrRoleMention(user, senderRoles);
+                const recipientMention = getUserOrRoleMention(messageWithAuthor.author, recipientRoles);
                 await replyToMessage({
                     reaction,
                     message: messageWithAuthor,
-                    replyMessage: `${user} sent 1 ${usedEmoji} to ${messageWithAuthor.author}`
+                    replyMessage: `${await senderMention} sent 1 ${usedEmoji} to ${await recipientMention}`,
+                    guildId
                 });
             } catch (error) {
                 if (error instanceof AbstractBankError) {
                     await replyToMessage({
                         reaction,
                         message: messageWithAuthor,
-                        replyMessage: error
+                        replyMessage: error,
+                        guildId
                     });
                 }
             }
@@ -43,14 +56,16 @@ export const reactionHandler = async (reaction: MessageReaction | PartialMessage
 const replyToMessage = async ({
     reaction,
     message,
-    replyMessage
+    replyMessage,
+    guildId
 }: {
     reaction: MessageReaction | PartialMessageReaction,
     message: OmitPartialGroupDMChannel<Message>
     replyMessage: ToStringAble,
+    guildId: string,
 }) => {
     const guildService = getGuildService();
-    const spamChannel = await guildService.getSpamChannelForGuild(reaction.message.guildId as string); // TODO assert this
+    const spamChannel = await guildService.getSpamChannelForGuild(guildId);
 
     if (spamChannel.length === 1) {
         const channel = await reaction.client.channels.fetch(spamChannel[0].channel);
@@ -66,3 +81,12 @@ const replyToMessage = async ({
         await message.reply(replyMessage.toString());
     }
 }
+
+const getUserOrRoleMention = async (user: PartialUser | User, roleIdsPromise: Promise<Array<string>>) => {
+    const roles = await roleIdsPromise.then(roles => roles.map(roleIdToRoleMention));
+    const choices = [user, ...roles];
+    if (choices.length === 1) {
+        return user;
+    }
+    return choices[Math.floor(Math.random() * choices.length)];
+};

@@ -9,15 +9,18 @@ import {
     SlashCommandOptionsOnlyBuilder,
     ChatInputCommandInteraction,
     User as DiscordUser,
-    MessageFlags
+    MessageFlags,
+    SlashCommandSubcommandGroupBuilder,
+    SlashCommandSubcommandsOnlyBuilder
 } from 'discord.js';
-import { getBank, getGuildService } from '../services';
+import { getBank, getGuildService, getRoleService } from '../services';
 import { CreateCurrencyRequest, GetBalancesRequest, TransferRequest, User } from '../services/bank';
 import { toUser } from './util';
 import { AbstractBankError } from '../errors';
+import { MentionableStateType } from '../db/schema';
 
 type IntentCommandWithCallback<Event extends GatewayDispatchEvents, D = unknown, Payload extends _DataPayload<Event> = _DataPayload<Event, D>> = {
-    commandConfig: SlashCommandBuilder | SlashCommandOptionsOnlyBuilder,
+    commandConfig: SlashCommandBuilder | SlashCommandOptionsOnlyBuilder | SlashCommandSubcommandGroupBuilder | SlashCommandSubcommandsOnlyBuilder,
     callback: (event: ChatInputCommandInteraction) => Promise<void>,
 };
 
@@ -125,7 +128,7 @@ const GetBalancesCommand: IntentCommandWithCallback<GatewayDispatchEvents.Integr
         .addStringOption(option =>
             option.setName('associated_emoji')
                 .setDescription('Emoji used to send coins')
-                .setRequired(true)
+                .setRequired(false)
         ).addUserOption(option =>
             option.setRequired(false)
                 .setName('user')
@@ -138,10 +141,10 @@ const GetBalancesCommand: IntentCommandWithCallback<GatewayDispatchEvents.Integr
             await event.reply("Bot cannot have money, dummy");
             return;
         }
-        const emoji = event.options.getString('associated_emoji', true)
+        const emoji = event.options.getString('associated_emoji', false)
         const requestOptions: GetBalancesRequest = {
             user: user ? toUser(user) : undefined,
-            emoji,
+            emoji: emoji ?? undefined,
             guild: event.guildId as string, // TODO assert this
         };
         const balances = await bank.getBalances(requestOptions);
@@ -155,7 +158,6 @@ const GetAllCurrencies: IntentCommandWithCallback<GatewayDispatchEvents.Integrat
         .setDescription('See all currencies registered'),
     callback: commandErrorWrapper(async (event) => {
         const bank = getBank();
-        const user = event.options.getUser('user');
         const emojis = (await bank.getAllCurrenciesForGuild({
             guild: event.guildId as string, // TODO assert this
         })).map(({ emoji }) => emoji).join('');
@@ -198,18 +200,153 @@ const SetSpamChannel: IntentCommandWithCallback<GatewayDispatchEvents.Integratio
     })
 };
 
+const RoleComands: IntentCommandWithCallback<GatewayDispatchEvents.IntegrationCreate, APIChatInputApplicationCommandInteraction> = {
+    commandConfig: new SlashCommandBuilder()
+        .setName('role')
+        .setDescription('Commands with roles')
+        .addSubcommand(subCommand =>
+            subCommand.setName('create')
+                .setDescription('Create a new role alias')
+                .addStringOption(option =>
+                    option.setName('name')
+                        .setDescription('Name of the new role')
+                        .setRequired(true)
+                )
+                .addUserOption(option =>
+                    option.setName('user')
+                        .setDescription('User to pre populate in role, otherwise its you')
+                        .setRequired(false)
+                )
+        )
+        .addSubcommand(subCommand =>
+            subCommand.setName('mute')
+                .setDescription('Prevent role from being mentioned by bot')
+                .addRoleOption(option =>
+                    option.setName('role')
+                        .setDescription('Role you want to mute')
+                        .setRequired(true)
+                )
+                .addBooleanOption(option =>
+                    option.setName('unmute')
+                        .setDescription('Use this to unmute a role')
+                        .setRequired(false)
+                )
+        )
+        .addSubcommandGroup(subGroup =>
+            subGroup.setName('user')
+                .setDescription('Actions for users on a role')
+                .addSubcommand(subCommand =>
+                    subCommand.setName('add')
+                        .setDescription('Add user to role')
+                        .addRoleOption(option =>
+                            option.setName('role')
+                                .setDescription('Role you want to add user to')
+                                .setRequired(true)
+                        )
+                        .addUserOption(option =>
+                            option.setName('user')
+                                .setDescription('User to add to role, otherwise its you')
+                                .setRequired(false)
+                        )
+                )
+                .addSubcommand(subCommand =>
+                    subCommand.setName('remove')
+                        .setDescription('Remove user to role')
+                        .addRoleOption(option =>
+                            option.setName('role')
+                                .setDescription('Role you want to remove user from')
+                                .setRequired(true)
+                        )
+                        .addUserOption(option =>
+                            option.setName('user')
+                                .setDescription('User to remove from role, otherwise its you')
+                                .setRequired(false)
+                        )
+                )
+        ),
+    callback: commandErrorWrapper(async (event) => {
+        const guildId = event.guild?.id;
+        if (!guildId) {
+            throw new Error('Expected to get a guild id');
+        }
+
+        const subCommandGroup = event.options.getSubcommandGroup(false);
+        const subCommand = event.options.getSubcommand(true);
+
+        if (!subCommandGroup && subCommand === 'mute') {
+            const role = event.options.getRole('role', true);
+            const preventMention = !(event.options.getBoolean('unmute'));
+            const roleService = getRoleService();
+            const isMentionable: MentionableStateType = preventMention ? 'blocked_by_user' : role.mentionable ? 'is_mentionable' : 'blocked_by_discord';
+            await roleService.setRoleMentionable(role.id, isMentionable);
+            await event.reply({
+                content: `${role} is ${isMentionable === 'is_mentionable' ? 'now mentionable.' : 'no longer mentionable.'}`,
+                flags: MessageFlags.Ephemeral
+            });
+        } else if (!subCommandGroup && subCommand === 'create') {
+            const roleName = event.options.getString('name', true);
+            const user = event.options.getUser('user', false) || event.user;
+
+            const role = await event.guild.roles.create({
+                name: roleName,
+                permissions: [],
+                mentionable: true
+            });
+            await event.guild.members.addRole({
+                role,
+                user
+            });
+            await event.reply({
+                content: `Created new role ${role} with ${user}`,
+                flags: MessageFlags.Ephemeral
+            });
+        } else if (subCommandGroup === 'user') {
+            const role = event.options.getRole('role', true);
+            const user = event.options.getUser('user', false) || event.user;
+
+            // What is permissions? We should check this before adding / removing users
+            console.log('Wtf are the roles permissions?:', role.permissions);
+
+            if (subCommand === 'add') {
+                await event.guild.members.addRole({
+                    role: role.id,
+                    user
+                });
+                await event.reply({
+                    content: `Added ${user} to ${role}`,
+                    flags: MessageFlags.Ephemeral
+                });
+            } else if (subCommand === 'remove') {
+                await event.guild.members.removeRole({
+                    role: role.id,
+                    user
+                });
+                await event.reply({
+                    content: `Removed ${user} from ${role}`,
+                    flags: MessageFlags.Ephemeral
+                });
+            }
+        }
+    }),
+};
+
 export const ALL_COMMAND_CONFIGS = [
     CreateCurrencyCommand,
     GetAllCurrencies,
     GetBalancesCommand,
     SendCurrencyCommand,
-    SetSpamChannel
+    SetSpamChannel,
+    RoleComands
 ];
+
+const getRestClient = () => {
+    return new REST({ version: '10' }).setToken(process.env.DISCORD_TOKEN!);
+}
 
 export const installGlobalCommands = async () => {
     const commands = ALL_COMMAND_CONFIGS.map(c => c.commandConfig.toJSON());
 
-    const rest = new REST({ version: '10' }).setToken(process.env.DISCORD_TOKEN!);
+    const rest = getRestClient();
 
     try {
         console.log('Started refreshing application (/) commands.');

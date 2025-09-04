@@ -8,3 +8,7 @@ export const toUser = (user: DiscordUser | PartialUser): User => {
         discord_user: user
     };
 }
+
+export const roleIdToRoleMention = (roleId: string) => {
+    return `<@&${roleId}>`;
+}
