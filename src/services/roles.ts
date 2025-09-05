@@ -6,9 +6,13 @@ import { MentionableStateType, mentionableStateValues } from "../db/schema";
 
 const AddUserRoleOptionZ = z.object({
     role: z.string(),
+    roleName: z.string(),
     guild: z.string(),
     isMentionable: z.enum(mentionableStateValues),
-    discordUserIds: z.string().array(),
+    users: z.object({
+        discordId: z.string(),
+        name: z.string(),
+    }).array(),
 });
 type AddUserRoleOption = z.infer<typeof AddUserRoleOptionZ>;
 
@@ -21,8 +25,14 @@ type GetUserRoleOption = z.infer<typeof GetUserRoleOptionZ>;
 const UpdateUserRolesOptionZ = z.object({
     guild: z.string(),
     role_id: z.string(),
-    previousUserDiscordIds: z.string().array(),
-    newUserDiscordIds: z.string().array(),
+    previousUsers: z.object({
+        discordId: z.string(),
+        name: z.string(),
+    }).array(),
+    newUsers: z.object({
+        discordId: z.string(),
+        name: z.string(),
+    }).array(),
     isMentionable: z.enum(mentionableStateValues)
 });
 type UpdateUserRolesOption = z.infer<typeof UpdateUserRolesOptionZ>;
@@ -30,22 +40,36 @@ type UpdateUserRolesOption = z.infer<typeof UpdateUserRolesOptionZ>;
 type InsertRoles = InferInsertModel<typeof role>;
 type InsertUserRoles = InferInsertModel<typeof userRoles>;
 
+type Transaction = Parameters<Parameters<(typeof db)['transaction']>[0]>[0];
+
 export class Role {
+
+    async getIdForRoleNameIfExists({ guild, roleName }: { guild: string, roleName: string }) {
+        const result = await db.select({ discordId: role.role_discord_id }).from(role).where(
+            and(
+                eq(role.guild, guild),
+                eq(role.role_name, roleName)
+            )
+        ).limit(1);
+        return result.length > 0 ? result[0].discordId : undefined;
+    }
 
     async addUserRole(userRole: AddUserRoleOption) {
         return await db.transaction(async (tx) => {
             const roles = await tx.insert(role).values({
                 guild: userRole.guild,
+                role_name: userRole.roleName,
                 role_discord_id: userRole.role,
                 is_mentionable: userRole.isMentionable,
             }).returning({ role_id: role.id });
             const { role_id } = roles[0];
-            // Users need to exist before we can add the role, but we dont check this
-            const users = await tx.select({ id: usersTable.id, discordId: usersTable.discord_id }).from(usersTable).where(inArray(usersTable.discord_id, userRole.discordUserIds));
-            await tx.insert(userRoles).values(users.map<InsertUserRoles>(({ id }) => ({
-                user_id: id,
-                role_id,
-            })))
+            if (userRole.users.length > 0) {
+                const users = await this.getUsers(tx, userRole.users);
+                await tx.insert(userRoles).values(users.map<InsertUserRoles>(({ id }) => ({
+                    user_id: id,
+                    role_id,
+                })))
+            }
         });
     }
 
@@ -62,14 +86,21 @@ export class Role {
     }
 
     // Update members in role for an old and new role
-    async updateUserRoles({ guild, role_id, previousUserDiscordIds, newUserDiscordIds, isMentionable }: UpdateUserRolesOption) {
-        const previousUserSet = new Set(previousUserDiscordIds);
-        const newUserSet = new Set(newUserDiscordIds);
+    async updateUserRoles({ guild, role_id, previousUsers, newUsers, isMentionable }: UpdateUserRolesOption) {
+        const previousUserSet = new Set(previousUsers.map(({ discordId }) => discordId));
+        const newUserSet = new Set(newUsers.map(({ discordId }) => discordId));
 
         const removedUsers = previousUserSet.difference(newUserSet);
         const addedUsers = newUserSet.difference(previousUserSet);
 
+        const allUpdatedUserDiscordIds = previousUserSet.symmetricDifference(newUserSet);
+
+        const allUsersToUpdate = [...previousUsers, ...newUsers].filter(({ discordId }) => allUpdatedUserDiscordIds.has(discordId));
+
         await db.transaction(async (tx) => {
+
+            const userIdsPromise = this.getUsers(tx, allUsersToUpdate);
+
             const roleIdPromise = tx.select({ id: role.id, isMentionable: role.is_mentionable })
                 .from(role)
                 .where(and(
@@ -86,16 +117,13 @@ export class Role {
                 });
             const removedUserIdsPromise = removedUsers.size === 0 ?
                 Promise.resolve([]) :
-                tx.select({ id: usersTable.id })
-                    .from(usersTable)
-                    .where(inArray(usersTable.discord_id, [...removedUsers]))
-                    .then(userIds => userIds.map(({ id }) => id));
+                userIdsPromise
+                    .then(userIds => userIds.filter(({ discordId }) => removedUsers.has(discordId)).map(({ id }) => id));
+
             const addedUserIdsPromise = addedUsers.size === 0 ?
                 Promise.resolve([]) :
-                tx.select({ id: usersTable.id })
-                    .from(usersTable)
-                    .where(inArray(usersTable.discord_id, [...addedUsers]))
-                    .then(userIds => userIds.map(({ id }) => id));
+                userIdsPromise
+                    .then(userIds => userIds.filter(({ discordId }) => addedUsers.has(discordId)).map(({ id }) => id));
 
             const removedUsersPromise = Promise.all([roleIdPromise, removedUserIdsPromise]).then(([role, userIds]) => {
                 tx.update(userRoles)
@@ -137,5 +165,31 @@ export class Role {
         await db.update(role)
             .set({ is_mentionable: isMentionable })
             .where(eq(role.role_discord_id, roleId));
+    }
+
+    private async getUsers(database: Transaction, discordUsers: Array<{ name: string, discordId: string }>) {
+        const foundUsers = await database.select({
+            id: usersTable.id,
+            discordId: usersTable.discord_id
+        })
+            .from(usersTable)
+            .where(
+                inArray(usersTable.discord_id, discordUsers.map(({ discordId }) => discordId))
+            );
+        const usersToCreate = discordUsers.filter(({ discordId }) =>
+            foundUsers.some(({ discordId: foundDiscordId }) => discordId === foundDiscordId)
+        );
+
+        if (usersToCreate.length === 0) {
+            return foundUsers;
+        }
+
+        const createdUsers = await database.insert(usersTable)
+            .values(usersToCreate.map(({ name, discordId }) => ({
+                discord_id: discordId,
+                name
+            }))).returning({ id: usersTable.id, discordId: usersTable.discord_id });
+
+        return [...foundUsers, ...createdUsers];
     }
 }

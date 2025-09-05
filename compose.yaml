@@ -1,0 +1,17 @@
+services:
+  coin-bot:
+    image: ghcr.io/dahaden/coin-bot
+    build: .
+    env_file:
+      - ./.env
+    links:
+      - "postgres:database"
+  postgres:
+    image: postgres:17
+    environment:
+      - POSTGRES_PASSWORD=password
+      - POSTGRES_USER=user
+    ports:
+      - 5432:5432
+
+

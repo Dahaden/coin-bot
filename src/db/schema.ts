@@ -52,12 +52,13 @@ export const mentionableState = pgEnum('mentionable_state', mentionableStateValu
 export const role = pgTable("roles", {
   id: integer().primaryKey().generatedAlwaysAsIdentity(),
   guild: varchar({ length: 255 }).notNull(),
+  role_name: varchar({ length: 255 }),
   role_discord_id: varchar({ length: 255 }).notNull(),
   is_mentionable: mentionableState().notNull(),
   createdAt: timestamp().notNull().defaultNow(),
   updated_at: timestamp().notNull().defaultNow(),
 }, (table) => [
-  index().on(table.guild, table.role_discord_id)
+  index().on(table.guild, table.role_discord_id),
 ]);
 
 export const userRoles = pgTable("user_roles", {

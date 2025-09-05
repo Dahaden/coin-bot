@@ -15,7 +15,7 @@ import {
 } from 'discord.js';
 import { getBank, getGuildService, getRoleService } from '../services';
 import { CreateCurrencyRequest, GetBalancesRequest, TransferRequest, User } from '../services/bank';
-import { toUser } from './util';
+import { roleHasPermissions, toUser } from './util';
 import { AbstractBankError } from '../errors';
 import { MentionableStateType } from '../db/schema';
 
@@ -32,7 +32,7 @@ const commandErrorWrapper = <T extends ChatInputCommandInteraction>(callback: (e
             if (error instanceof AbstractBankError) {
                 await event.reply(error.message);
             } else if (error instanceof Error) {
-                await event.reply(`Not sure what went wrong...: ${error.message}`)
+                await event.reply({ content: `Not sure what went wrong...: ${error.message}`, flags: MessageFlags.Ephemeral })
             }
         }
     }
@@ -148,7 +148,7 @@ const GetBalancesCommand: IntentCommandWithCallback<GatewayDispatchEvents.Integr
             guild: event.guildId as string, // TODO assert this
         };
         const balances = await bank.getBalances(requestOptions);
-        await event.reply(`Balance for ${emoji}.\n${balances.map(({ name, coins }) => `${name}: ${coins}`).join('\n')}`);
+        await event.reply(`Balance for ${emoji ?? 'all emojis'}.\n${balances.map(({ name, coins }) => `${name}: ${coins}`).join('\n')}`);
     })
 };
 
@@ -216,6 +216,20 @@ const RoleComands: IntentCommandWithCallback<GatewayDispatchEvents.IntegrationCr
                     option.setName('user')
                         .setDescription('User to pre populate in role, otherwise its you')
                         .setRequired(false)
+                )
+        )
+        .addSubcommand(subCommand =>
+            subCommand.setName('delete')
+                .setDescription('Delete role')
+                .addRoleOption(option =>
+                    option.setName('role')
+                        .setDescription('Role you wish to annihilate')
+                        .setRequired(true)
+                )
+                .addBooleanOption(option =>
+                    option.setName('are_you_sure')
+                        .setDescription('Do you really want to delete this role?')
+                        .setRequired(true)
                 )
         )
         .addSubcommand(subCommand =>
@@ -287,6 +301,16 @@ const RoleComands: IntentCommandWithCallback<GatewayDispatchEvents.IntegrationCr
             const roleName = event.options.getString('name', true);
             const user = event.options.getUser('user', false) || event.user;
 
+            const existingRoleId = await getRoleService().getIdForRoleNameIfExists({ guild: guildId, roleName });
+
+            if (existingRoleId) {
+                await event.reply({
+                    content: `Looks like <@&${existingRoleId}> already exists! Maybe you should use this one...`,
+                    flags: MessageFlags.Ephemeral
+                });
+                return;
+            }
+
             const role = await event.guild.roles.create({
                 name: roleName,
                 permissions: [],
@@ -300,12 +324,54 @@ const RoleComands: IntentCommandWithCallback<GatewayDispatchEvents.IntegrationCr
                 content: `Created new role ${role} with ${user}`,
                 flags: MessageFlags.Ephemeral
             });
+        } else if (!subCommandGroup && subCommand === 'delete') {
+            const role = event.options.getRole('role', true);
+            const areYouSure = event.options.getBoolean('are_you_sure', true);
+
+            if (!areYouSure) {
+                await event.reply({
+                    content: `Yea fair enough, its a big decision. Think about it and come back to me`,
+                    flags: MessageFlags.Ephemeral
+                });
+                return;
+            }
+
+            const doesRoleHavePermissions = roleHasPermissions(role);
+            if (doesRoleHavePermissions) {
+                await event.reply({
+                    content: `Role ${role} has some permissions. You can only use this on roles with no permissions`,
+                    flags: MessageFlags.Ephemeral
+                });
+                return;
+            }
+
+            await event.guild.roles.delete(role.id);
+            await event.reply({
+                content: `Role ${role} has been removed`,
+                flags: MessageFlags.Ephemeral
+            });
+
         } else if (subCommandGroup === 'user') {
             const role = event.options.getRole('role', true);
             const user = event.options.getUser('user', false) || event.user;
 
-            // What is permissions? We should check this before adding / removing users
-            console.log('Wtf are the roles permissions?:', role.permissions);
+            const doesRoleHavePermissions = roleHasPermissions(role);
+
+            if (typeof role.permissions === 'string') {
+                // What is permissions? We should check this before adding / removing users
+                console.log('Wtf are the roles permissions?:', role.permissions);
+                await event.reply({
+                    content: `Ask dave that the permissions is now a string.... he didnt think this would happen so he didnt implement this path`,
+                    flags: MessageFlags.Ephemeral
+                });
+                return;
+            } else if (doesRoleHavePermissions) {
+                await event.reply({
+                    content: `Role ${role} has some permissions. You can only use this on roles with no permissions`,
+                    flags: MessageFlags.Ephemeral
+                });
+                return;
+            }
 
             if (subCommand === 'add') {
                 await event.guild.members.addRole({
