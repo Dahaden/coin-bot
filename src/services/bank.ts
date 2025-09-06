@@ -70,7 +70,7 @@ export class Bank {
                 ...(request.emoji ? [eq(currencyTable.emoji, request.emoji)] : []),
                 ...(request.user ? [eq(usersTable.discord_id, request.user.discord_id)] : [])
             ))
-            .orderBy(currencyTable.emoji, bankTable.coins);
+            .orderBy(currencyTable.emoji, desc(bankTable.coins));
     }
 
     async createCurrency(createCurrency: CreateCurrencyRequest) {

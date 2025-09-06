@@ -117,7 +117,7 @@ const SendCurrencyCommand: IntentCommandWithCallback<GatewayDispatchEvents.Integ
             guild: event.guildId as string, // TODO assert this
         };
         await bank.transferFunds(requestOptions);
-        await event.reply(`Sent ${requestOptions.amount} to ${recipient.displayName}`);
+        await event.reply(`Sent ${requestOptions.amount}${requestOptions.emoji} to ${recipient.displayName}`);
     })
 };
 
@@ -148,7 +148,22 @@ const GetBalancesCommand: IntentCommandWithCallback<GatewayDispatchEvents.Integr
             guild: event.guildId as string, // TODO assert this
         };
         const balances = await bank.getBalances(requestOptions);
-        await event.reply(`Balance for ${emoji ?? 'all emojis'}.\n${balances.map(({ name, coins }) => `${name}: ${coins}`).join('\n')}`);
+        if (balances.length === 0) {
+            await event.reply('No currencies found, use /create to make one!');
+        } else if (emoji) {
+            await event.reply(`Balance for ${emoji}.\n${balances.map(({ name, coins, emoji }) => `${name}: ${coins}${emoji}`).join('\n')}`);
+        } else {
+            const groupedByEmoji = balances.reduce<Record<string, typeof balances>>((acc, curr) => {
+                const emojiBalances = acc[curr.emoji] ?? [];
+                emojiBalances.push(curr),
+                    acc[curr.emoji] = emojiBalances;
+                return acc;
+            }, {});
+            const message = Object.entries(groupedByEmoji)
+                .map(([emoji, balances]) => `Currency ${emoji}:\n${balances.map(({ name, coins, emoji }) => `\t${name}: ${coins}${emoji}`).join('\n')
+                    }`).join('\n');
+            event.reply(`Balances:\n${message}`);
+        }
     })
 };
 
